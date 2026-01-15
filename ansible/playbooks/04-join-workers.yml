@@ -1,0 +1,53 @@
+---
+- name: Join worker nodes to Kubernetes cluster
+  hosts: workers
+  become: yes
+  tasks:
+    - name: Check if node is already part of cluster
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: node_joined
+
+    - name: Copy join command from master
+      copy:
+        src: ./join-command.sh
+        dest: /tmp/join-command.sh
+        mode: '0755'
+      when: not node_joined.stat.exists
+
+    - name: Join worker node to cluster
+      shell: bash /tmp/join-command.sh
+      when: not node_joined.stat.exists
+      register: join_result
+
+    - name: Display join result
+      debug:
+        msg: "{{ join_result.stdout_lines }}"
+      when: not node_joined.stat.exists
+
+- name: Verify cluster nodes
+  hosts: masters
+  become_user: ubuntu
+  tasks:
+    - name: Wait for worker nodes to be ready
+      shell: kubectl get nodes
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: nodes_status
+      retries: 5
+      delay: 10
+      until: nodes_status.stdout.find('NotReady') == -1
+
+    - name: Display all nodes
+      debug:
+        msg: "{{ nodes_status.stdout_lines }}"
+
+    - name: Get detailed node information
+      shell: kubectl get nodes -o wide
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: nodes_detailed
+
+    - name: Display detailed node information
+      debug:
+        msg: "{{ nodes_detailed.stdout_lines }}"

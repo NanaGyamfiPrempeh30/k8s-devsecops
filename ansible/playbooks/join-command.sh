@@ -1,0 +1,1 @@
+kubeadm join 10.0.1.75:6443 --token ghao53.1d8qbt1paacp4736 --discovery-token-ca-cert-hash sha256:6869008a855899b95bf92639262a43bf4bee2c2214d8d817424e0cf83287fb88 

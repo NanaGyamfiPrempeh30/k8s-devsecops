@@ -1,0 +1,63 @@
+---
+- name: Initialize Kubernetes master node
+  hosts: masters
+  become: yes
+  tasks:
+    - name: Check if Kubernetes is already initialized
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: k8s_initialized
+
+    - name: Initialize Kubernetes cluster with kubeadm
+      shell: |
+        kubeadm init \
+          --pod-network-cidr=192.168.0.0/16 \
+          --apiserver-advertise-address={{ private_ip }} \
+          --node-name={{ inventory_hostname }}
+      when: not k8s_initialized.stat.exists
+      register: kubeadm_init
+
+    - name: Create .kube directory for ubuntu user
+      file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy admin.conf to ubuntu user's kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ubuntu/.kube/config
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+        remote_src: yes
+
+    - name: Create .kube directory for root
+      file:
+        path: /root/.kube
+        state: directory
+        mode: '0755'
+
+    - name: Copy admin.conf to root's kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /root/.kube/config
+        mode: '0644'
+        remote_src: yes
+
+    - name: Generate join command
+      shell: kubeadm token create --print-join-command
+      register: join_command_output
+
+    - name: Save join command to local file
+      local_action:
+        module: copy
+        content: "{{ join_command_output.stdout }}"
+        dest: "./join-command.sh"
+      become: no
+
+    - name: Display join command
+      debug:
+        msg: "{{ join_command_output.stdout }}"

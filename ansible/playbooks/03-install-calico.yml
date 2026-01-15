@@ -1,0 +1,37 @@
+---
+- name: Install Calico CNI
+  hosts: masters
+  become: yes
+  tasks:
+    - name: Download Calico manifest
+      get_url:
+        url: https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/calico.yaml
+        dest: /tmp/calico.yaml
+        mode: '0644'
+
+    - name: Apply Calico manifest
+      become_user: ubuntu
+      shell: kubectl apply -f /tmp/calico.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for Calico pods to be ready
+      become_user: ubuntu
+      shell: kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n kube-system --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 10
+      register: calico_ready
+      until: calico_ready.rc == 0
+
+    - name: Verify Calico installation
+      become_user: ubuntu
+      shell: kubectl get pods -n kube-system -l k8s-app=calico-node
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: calico_pods
+
+    - name: Display Calico pods
+      debug:
+        msg: "{{ calico_pods.stdout_lines }}"
