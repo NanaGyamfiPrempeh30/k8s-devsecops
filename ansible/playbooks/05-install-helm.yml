@@ -1,0 +1,39 @@
+---
+- name: Install Helm on master node
+  hosts: masters
+  become: yes
+  tasks:
+    - name: Download Helm installation script
+      get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get_helm.sh
+        mode: '0700'
+
+    - name: Install Helm
+      shell: /tmp/get_helm.sh
+      args:
+        creates: /usr/local/bin/helm
+
+    - name: Verify Helm installation
+      become_user: ubuntu
+      shell: helm version
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: helm_version
+
+    - name: Display Helm version
+      debug:
+        msg: "{{ helm_version.stdout }}"
+
+    - name: Add Helm stable repository
+      become_user: ubuntu
+      shell: helm repo add stable https://charts.helm.sh/stable
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      ignore_errors: yes
+
+    - name: Update Helm repositories
+      become_user: ubuntu
+      shell: helm repo update
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config

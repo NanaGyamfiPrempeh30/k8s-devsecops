@@ -1,0 +1,83 @@
+---
+- name: Install MetalLB Load Balancer
+  hosts: masters
+  become_user: ubuntu
+  tasks:
+    - name: Create metallb-system namespace
+      shell: kubectl create namespace metallb-system --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Add MetalLB Helm repository
+      shell: helm repo add metallb https://metallb.github.io/metallb
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Update Helm repositories
+      shell: helm repo update
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Install MetalLB via Helm
+      shell: |
+        helm upgrade --install metallb metallb/metallb \
+          --namespace metallb-system \
+          --wait \
+          --timeout 5m
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for MetalLB controller to be ready
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=controller -n metallb-system --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create MetalLB IPAddressPool configuration
+      shell: |
+        cat <<YAML | kubectl apply -f -
+        apiVersion: metallb.io/v1beta1
+        kind: IPAddressPool
+        metadata:
+          name: default-pool
+          namespace: metallb-system
+        spec:
+          addresses:
+          - 10.0.1.200-10.0.1.250
+        YAML
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create MetalLB L2Advertisement
+      shell: |
+        cat <<YAML | kubectl apply -f -
+        apiVersion: metallb.io/v1beta1
+        kind: L2Advertisement
+        metadata:
+          name: default-l2
+          namespace: metallb-system
+        spec:
+          ipAddressPools:
+          - default-pool
+        YAML
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Verify MetalLB installation
+      shell: kubectl get pods -n metallb-system
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: metallb_pods
+
+    - name: Display MetalLB pods
+      debug:
+        msg: "{{ metallb_pods.stdout_lines }}"
+
+    - name: Verify MetalLB configuration
+      shell: kubectl get ipaddresspools.metallb.io -n metallb-system
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: metallb_config
+
+    - name: Display MetalLB configuration
+      debug:
+        msg: "{{ metallb_config.stdout_lines }}"

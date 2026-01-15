@@ -1,0 +1,119 @@
+---
+- name: Install HashiCorp Vault
+  hosts: masters
+  become_user: ubuntu
+  tasks:
+    - name: Add HashiCorp Helm repository
+      shell: helm repo add hashicorp https://helm.releases.hashicorp.com
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Update Helm repositories
+      shell: helm repo update
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create vault namespace
+      shell: kubectl create namespace vault --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create Vault values file (dev mode for demo)
+      copy:
+        dest: /tmp/vault-values.yaml
+        content: |
+          server:
+            dev:
+              enabled: true
+              devRootToken: "root"
+            
+            standalone:
+              enabled: true
+            
+            service:
+              type: ClusterIP
+            
+            dataStorage:
+              enabled: true
+              size: 2Gi
+              storageClass: local-path
+            
+            resources:
+              requests:
+                memory: 256Mi
+                cpu: 250m
+              limits:
+                memory: 512Mi
+                cpu: 500m
+          
+          ui:
+            enabled: true
+            serviceType: ClusterIP
+
+    - name: Install Vault via Helm
+      shell: |
+        helm upgrade --install vault hashicorp/vault \
+          --namespace vault \
+          --values /tmp/vault-values.yaml \
+          --wait \
+          --timeout 5m
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for Vault to be ready
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=vault -n vault --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Verify Vault pods
+      shell: kubectl get pods -n vault
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: vault_pods
+
+    - name: Display Vault pods
+      debug:
+        msg: "{{ vault_pods.stdout_lines }}"
+
+    - name: Create Vault Ingress for UI access
+      shell: |
+        cat <<YAML | kubectl apply -f -
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: vault-ui
+          namespace: vault
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-staging
+            traefik.ingress.kubernetes.io/router.entrypoints: websecure
+        spec:
+          ingressClassName: traefik
+          rules:
+          - host: vault.10.0.1.200.nip.io
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: vault
+                    port:
+                      number: 8200
+          tls:
+          - hosts:
+            - vault.10.0.1.200.nip.io
+            secretName: vault-tls
+        YAML
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Display Vault access information
+      debug:
+        msg:
+          - "Vault is running in DEV mode (not for production!)"
+          - "Root Token: root"
+          - "Vault UI: https://vault.10.0.1.200.nip.io"
+          - "Note: Certificate will show browser warning (staging cert)"
+          - ""
+          - "To access Vault CLI from pod:"
+          - "kubectl exec -n vault vault-0 -- vault status"

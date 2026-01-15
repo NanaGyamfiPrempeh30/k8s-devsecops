@@ -1,0 +1,40 @@
+---
+- name: Install local-path-provisioner for persistent storage
+  hosts: masters
+  become_user: ubuntu
+  tasks:
+    - name: Install local-path-provisioner
+      shell: kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.30/deploy/local-path-storage.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for local-path-provisioner to be ready
+      shell: kubectl wait --for=condition=ready pod -l app=local-path-provisioner -n local-path-storage --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Set local-path as default StorageClass
+      shell: |
+        kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Verify StorageClass
+      shell: kubectl get storageclass
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: storageclass
+
+    - name: Display StorageClass
+      debug:
+        msg: "{{ storageclass.stdout_lines }}"
+
+    - name: Verify local-path-provisioner pods
+      shell: kubectl get pods -n local-path-storage
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: provisioner_pods
+
+    - name: Display provisioner pods
+      debug:
+        msg: "{{ provisioner_pods.stdout_lines }}"

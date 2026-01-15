@@ -1,0 +1,80 @@
+---
+- name: Install cert-manager
+  hosts: masters
+  become_user: ubuntu
+  tasks:
+    - name: Add Jetstack Helm repository
+      shell: helm repo add jetstack https://charts.jetstack.io
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Update Helm repositories
+      shell: helm repo update
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create cert-manager namespace
+      shell: kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Install cert-manager CRDs
+      shell: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.crds.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Install cert-manager via Helm
+      shell: |
+        helm upgrade --install cert-manager jetstack/cert-manager \
+          --namespace cert-manager \
+          --version v1.16.2 \
+          --wait \
+          --timeout 5m
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for cert-manager to be ready
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=cert-manager -n cert-manager --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Verify cert-manager pods
+      shell: kubectl get pods -n cert-manager
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: certmanager_pods
+
+    - name: Display cert-manager pods
+      debug:
+        msg: "{{ certmanager_pods.stdout_lines }}"
+
+    - name: Create Let's Encrypt Staging ClusterIssuer
+      shell: |
+        cat <<YAML | kubectl apply -f -
+        apiVersion: cert-manager.io/v1
+        kind: ClusterIssuer
+        metadata:
+          name: letsencrypt-staging
+        spec:
+          acme:
+            server: https://acme-staging-v02.api.letsencrypt.org/directory
+            email: admin@example.com
+            privateKeySecretRef:
+              name: letsencrypt-staging
+            solvers:
+            - http01:
+                ingress:
+                  class: traefik
+        YAML
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Verify ClusterIssuer
+      shell: kubectl get clusterissuer
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: clusterissuer
+
+    - name: Display ClusterIssuer
+      debug:
+        msg: "{{ clusterissuer.stdout_lines }}"
