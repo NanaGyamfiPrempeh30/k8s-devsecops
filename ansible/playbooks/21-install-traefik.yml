@@ -1,0 +1,91 @@
+---
+- name: Install Traefik Fresh
+  hosts: masters
+  become_user: ubuntu
+  tasks:
+    - name: Create traefik namespace
+      shell: kubectl create namespace traefik --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create Traefik values
+      copy:
+        dest: /tmp/traefik-values.yaml
+        content: |
+          deployment:
+            replicas: 1
+          
+          ports:
+            web:
+              port: 80
+              exposedPort: 80
+              protocol: TCP
+            websecure:
+              port: 443
+              exposedPort: 443
+              protocol: TCP
+          
+          service:
+            type: LoadBalancer
+          
+          securityContext:
+            capabilities:
+              drop: [ALL]
+              add: [NET_BIND_SERVICE]
+            readOnlyRootFilesystem: true
+            runAsGroup: 0
+            runAsNonRoot: false
+            runAsUser: 0
+          
+          podSecurityContext:
+            fsGroup: 65532
+          
+          ingressRoute:
+            dashboard:
+              enabled: true
+          
+          logs:
+            general:
+              level: INFO
+            access:
+              enabled: true
+
+    - name: Install Traefik
+      shell: |
+        helm install traefik traefik/traefik \
+          --namespace traefik \
+          --values /tmp/traefik-values.yaml \
+          --wait \
+          --timeout 5m
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Get Traefik pods
+      shell: kubectl get pods -n traefik -o wide
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: traefik_pods
+
+    - name: Display pods
+      debug:
+        msg: "{{ traefik_pods.stdout_lines }}"
+
+    - name: Get Traefik service
+      shell: kubectl get svc -n traefik
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: traefik_svc
+
+    - name: Display service
+      debug:
+        msg: "{{ traefik_svc.stdout_lines }}"
+
+    - name: Test LoadBalancer connectivity
+      shell: kubectl get endpoints -n traefik traefik
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: traefik_endpoints
+
+    - name: Display endpoints
+      debug:
+        msg: "{{ traefik_endpoints.stdout_lines }}"

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Task Manager</title>
+    <style>
+        body { font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px; }
+        .task { background: #f0f0f0; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .completed { background: #d4edda; }
+        h1 { color: #333; }
+        .status { float: right; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🚀 DevSecOps Task Manager</h1>
+    <div id="tasks"></div>
+    <script>
+        fetch('/api/tasks')
+            .then(r => r.json())
+            .then(data => {
+                const container = document.getElementById('tasks');
+                data.tasks.forEach(task => {
+                    const div = document.createElement('div');
+                    div.className = 'task ' + (task.status === 'completed' ? 'completed' : '');
+                    div.innerHTML = `
+                        <strong>${task.title}</strong>
+                        <span class="status">${task.status}</span>
+                    `;
+                    container.appendChild(div);
+                });
+            });
+    </script>
+</body>
+</html>

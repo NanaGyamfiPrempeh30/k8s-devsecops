@@ -1,0 +1,184 @@
+---
+- name: Deploy 3-Tier Application
+  hosts: masters
+  become_user: ubuntu
+  tasks:
+    - name: Create namespace manifest
+      copy:
+        dest: /tmp/namespace.yaml
+        content: |
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: taskapp
+
+    - name: Create backend manifest
+      copy:
+        dest: /tmp/backend.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: backend
+            namespace: taskapp
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: backend
+            template:
+              metadata:
+                labels:
+                  app: backend
+              spec:
+                containers:
+                - name: backend
+                  image: yawgyamfiprem32/task-backend:v1
+                  ports:
+                  - containerPort: 8000
+                  livenessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8000
+                    initialDelaySeconds: 10
+                  readinessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8000
+                    initialDelaySeconds: 5
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: backend
+            namespace: taskapp
+          spec:
+            selector:
+              app: backend
+            ports:
+            - port: 8000
+              targetPort: 8000
+
+    - name: Create frontend manifest
+      copy:
+        dest: /tmp/frontend.yaml
+        content: |
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: frontend
+            namespace: taskapp
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: frontend
+            template:
+              metadata:
+                labels:
+                  app: frontend
+              spec:
+                containers:
+                - name: frontend
+                  image: yawgyamfiprem32/task-frontend:v1
+                  ports:
+                  - containerPort: 80
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: frontend
+            namespace: taskapp
+          spec:
+            selector:
+              app: frontend
+            ports:
+            - port: 80
+              targetPort: 80
+
+    - name: Create ingress manifest
+      copy:
+        dest: /tmp/ingress.yaml
+        content: |
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: taskapp
+            namespace: taskapp
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-staging
+          spec:
+            ingressClassName: traefik
+            rules:
+            - host: app.10.0.1.200.nip.io
+              http:
+                paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: frontend
+                      port:
+                        number: 80
+            tls:
+            - hosts:
+              - app.10.0.1.200.nip.io
+              secretName: taskapp-tls
+
+    - name: Apply namespace
+      shell: kubectl apply -f /tmp/namespace.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Apply backend
+      shell: kubectl apply -f /tmp/backend.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Apply frontend
+      shell: kubectl apply -f /tmp/frontend.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Apply ingress
+      shell: kubectl apply -f /tmp/ingress.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for pods
+      pause:
+        seconds: 30
+
+    - name: Get application pods
+      shell: kubectl get pods -n taskapp -o wide
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: app_pods
+
+    - name: Display pods
+      debug:
+        msg: "{{ app_pods.stdout_lines }}"
+
+    - name: Get services
+      shell: kubectl get svc -n taskapp
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: app_svcs
+
+    - name: Display services
+      debug:
+        msg: "{{ app_svcs.stdout_lines }}"
+
+    - name: Get ingress
+      shell: kubectl get ingress -n taskapp
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: app_ingress
+
+    - name: Display ingress
+      debug:
+        msg: "{{ app_ingress.stdout_lines }}"
+
+    - name: Display application URL
+      debug:
+        msg: "✅ Application deployed! Access at: https://app.10.0.1.200.nip.io"

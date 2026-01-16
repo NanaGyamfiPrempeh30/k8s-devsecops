@@ -1,0 +1,179 @@
+---
+- name: Install Prometheus and Grafana (Lightweight)
+  hosts: masters
+  become_user: ubuntu
+  tasks:
+    - name: Add Prometheus Helm repository
+      shell: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Add Grafana Helm repository
+      shell: helm repo add grafana https://grafana.github.io/helm-charts
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Update Helm repositories
+      shell: helm repo update
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create monitoring namespace
+      shell: kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Uninstall any existing prometheus release
+      shell: helm uninstall prometheus -n monitoring
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      ignore_errors: yes
+
+    - name: Wait for cleanup
+      pause:
+        seconds: 15
+
+    - name: Create lightweight Prometheus values
+      copy:
+        dest: /tmp/prometheus-light-values.yaml
+        content: |
+          prometheus:
+            enabled: true
+            prometheusSpec:
+              replicas: 1
+              retention: 2d
+              resources:
+                requests:
+                  memory: 300Mi
+                  cpu: 200m
+                limits:
+                  memory: 600Mi
+                  cpu: 400m
+              storageSpec:
+                volumeClaimTemplate:
+                  spec:
+                    storageClassName: local-path
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 3Gi
+          
+          grafana:
+            enabled: true
+            adminPassword: admin
+            resources:
+              requests:
+                memory: 100Mi
+                cpu: 100m
+              limits:
+                memory: 200Mi
+                cpu: 200m
+            persistence:
+              enabled: true
+              storageClassName: local-path
+              size: 1Gi
+            ingress:
+              enabled: true
+              ingressClassName: traefik
+              annotations:
+                cert-manager.io/cluster-issuer: letsencrypt-staging
+              hosts:
+                - grafana.10.0.1.200.nip.io
+              tls:
+                - secretName: grafana-tls
+                  hosts:
+                    - grafana.10.0.1.200.nip.io
+          
+          alertmanager:
+            enabled: false
+          
+          prometheusOperator:
+            resources:
+              requests:
+                memory: 100Mi
+                cpu: 100m
+              limits:
+                memory: 200Mi
+                cpu: 200m
+          
+          kubeStateMetrics:
+            resources:
+              requests:
+                memory: 64Mi
+                cpu: 50m
+              limits:
+                memory: 128Mi
+                cpu: 100m
+          
+          nodeExporter:
+            resources:
+              requests:
+                memory: 30Mi
+                cpu: 50m
+              limits:
+                memory: 50Mi
+                cpu: 100m
+
+    - name: Install kube-prometheus-stack with increased timeout
+      shell: |
+        helm install prometheus prometheus-community/kube-prometheus-stack \
+          --namespace monitoring \
+          --values /tmp/prometheus-light-values.yaml \
+          --timeout 15m \
+          --wait=false
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: prom_install
+
+    - name: Display installation output
+      debug:
+        msg: "{{ prom_install.stdout_lines }}"
+
+    - name: Wait for Prometheus Operator
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus-operator -n monitoring --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 30
+
+    - name: Wait for Prometheus pods
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n monitoring --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 30
+      ignore_errors: yes
+
+    - name: Wait for Grafana pods
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=grafana -n monitoring --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      retries: 3
+      delay: 30
+
+    - name: Get all monitoring pods
+      shell: kubectl get pods -n monitoring -o wide
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: monitoring_pods
+
+    - name: Display monitoring pods
+      debug:
+        msg: "{{ monitoring_pods.stdout_lines }}"
+
+    - name: Get Grafana ingress
+      shell: kubectl get ingress -n monitoring
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: grafana_ingress
+
+    - name: Display Grafana ingress
+      debug:
+        msg: "{{ grafana_ingress.stdout_lines }}"
+
+    - name: Display access information
+      debug:
+        msg:
+          - "Grafana URL: https://grafana.10.0.1.200.nip.io"
+          - "Grafana Login: admin / admin"
+          - "Note: Pods may still be starting - check with: kubectl get pods -n monitoring"

@@ -1,0 +1,74 @@
+---
+- name: Install ArgoCD
+  hosts: masters
+  become_user: ubuntu
+  tasks:
+    - name: Create argocd namespace
+      shell: kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Install ArgoCD
+      shell: kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Wait for ArgoCD pods
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Create ArgoCD ingress
+      shell: |
+        cat <<YAML | kubectl apply -f -
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: argocd-server
+          namespace: argocd
+          annotations:
+            cert-manager.io/cluster-issuer: letsencrypt-staging
+            traefik.ingress.kubernetes.io/router.tls: "true"
+        spec:
+          ingressClassName: traefik
+          rules:
+          - host: argocd.10.0.1.200.nip.io
+            http:
+              paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: argocd-server
+                    port:
+                      number: 80
+          tls:
+          - hosts:
+            - argocd.10.0.1.200.nip.io
+            secretName: argocd-tls
+        YAML
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Get ArgoCD admin password
+      shell: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: argocd_password
+
+    - name: Display ArgoCD info
+      debug:
+        msg:
+          - "ArgoCD URL: https://argocd.10.0.1.200.nip.io"
+          - "Username: admin"
+          - "Password: {{ argocd_password.stdout }}"
+
+    - name: Get all ArgoCD pods
+      shell: kubectl get pods -n argocd
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      register: argocd_pods
+
+    - name: Display ArgoCD pods
+      debug:
+        msg: "{{ argocd_pods.stdout_lines }}"
