@@ -304,7 +304,7 @@ ssh -i k8s-key.pem ubuntu@<master-public-ip> -L 80:10.0.1.200:80 -N
 
 ## Author
 
-**[Y. Nana Gyamfi Prempeh](https://www.linkedin.com/in/yashwanth-kumar-jaishankar-56258a50/)**
+**[Y. Nana Gyamfi Prempeh](https://www.linkedin.com/in/yaw-gyamfi-prempeh-4042a0129/)**
 
 DevSecOps Engineer | Kubernetes | Cloud Infrastructure | IaC
 
