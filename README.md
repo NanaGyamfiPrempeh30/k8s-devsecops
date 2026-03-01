@@ -286,6 +286,8 @@ ssh -i k8s-key.pem ubuntu@<master-public-ip> -L 80:10.0.1.200:80 -N
 
 ## Lessons Learned
 
+[Medium article "I Built a Production-Grade Kubernetes Platform in 48 Hours. Here’s Everything That Went Wrong (And How I Fixed It)"](https://medium.com/@yawgyamfiprempeh27/i-built-a-production-grade-kubernetes-platform-in-48-hours-db5629fba0e3)
+
 1. **Memory Management**: Production Kubernetes clusters need adequate resources; t3.medium instances minimum for running full observability stack
 2. **Ingress Configuration**: Host-based routing with nip.io requires careful port management when using SSH tunnels
 3. **Operator Dependencies**: Prometheus Operator must be running for ServiceMonitors to be processed
@@ -302,7 +304,7 @@ ssh -i k8s-key.pem ubuntu@<master-public-ip> -L 80:10.0.1.200:80 -N
 
 ## Author
 
-**Y. Nana Gyamfi Prempeh**
+**[Y. Nana Gyamfi Prempeh](https://www.linkedin.com/in/yaw-gyamfi-prempeh-4042a0129/)**
 
 DevSecOps Engineer | Kubernetes | Cloud Infrastructure | IaC
 
